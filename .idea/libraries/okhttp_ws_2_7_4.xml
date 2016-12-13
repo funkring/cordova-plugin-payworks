@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="okhttp-ws-2.7.4">
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.squareup.okhttp/okhttp-ws/2.7.4/c3eae21b9c0c6955099e64c208fd9fd61db5b6de/okhttp-ws-2.7.4.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.squareup.okhttp/okhttp-ws/2.7.4/9263de491b43141b2fe22672bbff7b0a645687cc/okhttp-ws-2.7.4-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
