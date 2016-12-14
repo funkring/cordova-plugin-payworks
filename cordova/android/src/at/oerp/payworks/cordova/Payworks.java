@@ -34,25 +34,23 @@ public class Payworks extends CordovaPlugin {
 	}
 	
 	abstract static class ActivityCallback {
-		public final CallbackContext callbackContext;
-		public final int	resultCode;
+		public final CallbackContext activityContext;
 
-		public ActivityCallback(CallbackContext inCallbackContext, int inResultCode) {
-			callbackContext = inCallbackContext;
-			resultCode = inResultCode;
+		public ActivityCallback(CallbackContext inCallbackContext) {
+			activityContext = inCallbackContext;
 		}
 
-		public void onActivityResult(int resultCode, Intent intent) {
+		public void onActivityResult(int resultCode, Intent intent) throws Exception {
 
 		}
 	}
 
-	protected void pushCallback(Intent intent, ActivityCallback inCallback) {
+	protected synchronized void pushCallback(Intent intent, ActivityCallback inCallback) {
 		boolean valid = false;
 		try {
 			cordova.setActivityResultCallback(this);
 			activityCallback = inCallback;
-			cordova.startActivityForResult((CordovaPlugin) this, intent, inCallback.resultCode);
+			cordova.startActivityForResult((CordovaPlugin) this, intent, inCallback.hashCode());
 			valid = true;
 		} finally {
 			if ( !valid ) {
@@ -64,8 +62,19 @@ public class Payworks extends CordovaPlugin {
 	protected JSONObject toJSONError(MposError error) throws JSONException {
 		JSONObject res = new JSONObject();
 		res.put("name","transaction_error");
-		res.put("message",error.getInfo());
-		res.put("developerInfo",error.getDeveloperInfo());
+
+		// get info
+		String info = error.getInfo();
+		if ( info == null || info.isEmpty() ) {
+			Exception e = error.getException();
+			if ( e != null ) info = e.getMessage();
+		}
+		if ( info == null || info.isEmpty() ) {
+			info = "Unexpected Error";
+		}
+
+		res.put("message",info);
+		res.putOpt("developerInfo",error.getDeveloperInfo());
 		res.putOpt("errorSource",error.getErrorSource());
 		res.putOpt("errorType",error.getErrorType());
 		return res;
@@ -89,12 +98,12 @@ public class Payworks extends CordovaPlugin {
 
 	protected JSONObject toJSONTransaction(Transaction inTransaction) throws JSONException {
 		JSONObject res = new JSONObject();
-		res.put("transactionId", inTransaction.getIdentifier());
-		res.put("amount",inTransaction.getAmount().doubleValue());
-		res.put("currency",inTransaction.getCurrency());
-		res.put("customIdentifier",inTransaction.getCustomIdentifier());
-		res.put("subject",inTransaction.getSubject());
-		res.put("status",inTransaction.getStatus());
+		res.putOpt("transactionId", inTransaction.getIdentifier());
+		res.putOpt("amount",inTransaction.getAmount().doubleValue());
+		res.putOpt("currency",inTransaction.getCurrency());
+		res.putOpt("customIdentifier",inTransaction.getCustomIdentifier());
+		res.putOpt("subject",inTransaction.getSubject());
+		res.putOpt("status",inTransaction.getStatus());
 		return res;
 	}
 
@@ -118,11 +127,12 @@ public class Payworks extends CordovaPlugin {
 						boolean execute(JSONArray args, CallbackContext callbackContext) throws Exception {
 							MposUi mposUi = initialized ? MposUi.getInitializedInstance() : null;
 							JSONObject options = args.getJSONObject(0);
+							JSONObject result = new JSONObject();
 
 							if ( mposUi == null ) {
 								ProviderMode mode = ProviderMode.TEST;
 								ApplicationName appName = ApplicationName.MCASHIER;
-								String integratorCode = "OERP";
+								String integrator = "OERP";
 	
 								if ( options != null ) {
 									// mode
@@ -138,12 +148,18 @@ public class Payworks extends CordovaPlugin {
 									}
 	
 									// integrator
-									integratorCode = options.optString("integrator",integratorCode);
+									integrator = options.optString("integrator",integrator);
 								}
-	
-								// init payworks								
-								mposUi = MposUi.initialize(cordova.getActivity(), mode, appName, integratorCode);
+
+								// init payworks
+								mposUi = MposUi.initialize(cordova.getActivity(), mode, appName, integrator);
 								initialized = true;
+
+								// put result
+								result.put("mode",mode);
+								result.put("appName",appName);
+								result.put("integrator",integrator);
+								result.put("initialized",initialized);
 							} 
 							
 							// configure
@@ -155,6 +171,7 @@ public class Payworks extends CordovaPlugin {
 								} else {
 									mposUi.getConfiguration().setDisplayResultBehavior(MposUiConfiguration.ResultDisplayBehavior.CLOSE_AFTER_TIMEOUT);
 								}
+								result.put("displayResultBehaviour",mposUi.getConfiguration().getDisplayResultBehavior());
 
 								// signature
 								if (options.optBoolean("signatureOnReceipt")) {
@@ -162,6 +179,7 @@ public class Payworks extends CordovaPlugin {
 								} else {
 									mposUi.getConfiguration().setSignatureCapture(MposUiConfiguration.SignatureCapture.ON_SCREEN);
 								}
+								result.put("signatureCapture",mposUi.getConfiguration().getSignatureCapture());
 
 								// summary options
 								JSONObject summary = options.optJSONObject("summary");
@@ -179,12 +197,19 @@ public class Payworks extends CordovaPlugin {
 									if ( summary.optBoolean("email") ) {
 										enumSet.add(MposUiConfiguration.SummaryFeature.SEND_RECEIPT_VIA_EMAIL);
 									}
+
+									// put result
+									JSONObject summaryResult = new JSONObject();
+									for (MposUiConfiguration.SummaryFeature feature: enumSet ) {
+										summaryResult.put(feature.name(),true);
+									}
+									result.put("summaryFeatures", summaryResult);
 								}
 
 							}
 							
 							if ( mposUi != null ) {
-								callbackContext.success();
+								callbackContext.success(result);
 							} else {
 								callbackContext.error("Unable to create mposUi");
 							}
@@ -211,7 +236,6 @@ public class Payworks extends CordovaPlugin {
 								subject = options.optString("subject",subject);
 							}
 
-
 							// do payment
 							TransactionParameters transactionParameters = new TransactionParameters.Builder()
 									.charge(amount, currency)
@@ -223,19 +247,14 @@ public class Payworks extends CordovaPlugin {
 							Intent intent = mposUi.createTransactionIntent(transactionParameters);
 
 							// push callback
-							pushCallback(intent, new Payworks.ActivityCallback(callbackContext, MposUi.REQUEST_CODE_PAYMENT)  {
+							pushCallback(intent, new Payworks.ActivityCallback(callbackContext)  {
 								@Override
-								public void onActivityResult(int resultCode, Intent intent) {
-									try {
-										Transaction transaction = MposUi.getInitializedInstance().getTransaction();
-										if ( resultCode == MposUi.RESULT_CODE_APPROVED ) {
-											JSONObject result = new JSONObject();
-											callbackContext.success(toJSONTransaction(transaction));
-										} else {
-											callbackContext.error(toJSONError(transaction));
-										}
-									} catch ( JSONException e) {
-										callbackContext.error(e.getMessage());
+								public void onActivityResult(int resultCode, Intent intent) throws JSONException {
+									Transaction transaction = MposUi.getInitializedInstance().getTransaction();
+									if ( resultCode == MposUi.RESULT_CODE_APPROVED  && transaction != null) {
+										activityContext.success(toJSONTransaction(transaction));
+									} else {
+										activityContext.error(toJSONError(transaction));
 									}
 								}
 							});
@@ -269,19 +288,14 @@ public class Payworks extends CordovaPlugin {
 							Intent intent = mposUi.createTransactionIntent(transactionParameters);
 
 							// push callback
-							pushCallback(intent, new Payworks.ActivityCallback(callbackContext, MposUi.REQUEST_CODE_PAYMENT)  {
+							pushCallback(intent, new Payworks.ActivityCallback(callbackContext)  {
 								@Override
-								public void onActivityResult(int resultCode, Intent intent) {
-									try {
-										Transaction transaction = MposUi.getInitializedInstance().getTransaction();
-										if ( resultCode == MposUi.RESULT_CODE_APPROVED ) {
-											JSONObject result = new JSONObject();
-											callbackContext.success(toJSONTransaction(transaction));
-										} else {
-											callbackContext.error(toJSONError(transaction));
-										}
-									} catch ( JSONException e) {
-										callbackContext.error(e.getMessage());
+								public void onActivityResult(int resultCode, Intent intent) throws JSONException {
+									Transaction transaction = MposUi.getInitializedInstance().getTransaction();
+									if ( resultCode == MposUi.RESULT_CODE_APPROVED && transaction != null ) {
+										activityContext.success(toJSONTransaction(transaction));
+									} else {
+										activityContext.error(toJSONError(transaction));
 									}
 								}
 							});
@@ -337,20 +351,21 @@ public class Payworks extends CordovaPlugin {
 		}
 	}
 	
-	
-	@Override
-	public void onStop() {
-		synchronized (this) {
-			activityCallback = null;
-		}
-	}
-	
+
 	@Override
 	public void onActivityResult(int requestCode, int resultCode, Intent intent) {
 		ActivityCallback callback = activityCallback;
-		if ( callback != null && requestCode == callback.resultCode ) {
-			callback.onActivityResult(resultCode, intent);
-		} 
+		if ( callback != null && requestCode == callback.hashCode() ) {
+			try {
+				callback.onActivityResult(resultCode, intent);
+			} catch (Throwable e) {
+				callback.activityContext.error(e.getMessage());
+			} finally {
+				synchronized ( this ) {
+					activityCallback = null;
+				}
+			}
+		}
 	}
 
 }
