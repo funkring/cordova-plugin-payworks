@@ -98,7 +98,7 @@ public class MainActivity extends Activity {
 
 			MposUi mposUi = MposUi.getInitializedInstance();
 			Intent intent = mposUi.createTransactionIntent(transactionParameters);
-			startActivityForResult(intent, MposUi.REQUEST_CODE_PAYMENT);
+			startActivityForResult(intent, this.hashCode());
 		}
 	}
 
@@ -180,7 +180,7 @@ public class MainActivity extends Activity {
 	}
 
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-		if (requestCode == MposUi.REQUEST_CODE_PAYMENT) {
+		if (requestCode == this.hashCode()) {
 			Transaction transaction = MposUi.getInitializedInstance().getTransaction();
 			try {
 
@@ -189,7 +189,7 @@ public class MainActivity extends Activity {
 					lastTransactionId = transaction.getIdentifier();
 					infoText = toJSONTransaction(transaction).toString() + "\n";
 				} else {
-					lastTransactionId = "";
+					lastTransactionId = "Transaktion is Empty!!!\n";
 				}
 
 				if (resultCode == MposUi.RESULT_CODE_APPROVED) {
