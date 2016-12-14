@@ -29,6 +29,8 @@
     <!-- android -->
     <platform name="android">
         <!-- framework src="com.android.support:support-v4:+" /-->
+        <source-file src="cordova/android/src/at/oerp/payworks/cordova/Payworks.java" target-dir="src/at/oerp/payworks/cordova/" />
+
         <framework src="plugin.gradle" custom="true" type="gradleReference" />
 		
 		<!--  config -->

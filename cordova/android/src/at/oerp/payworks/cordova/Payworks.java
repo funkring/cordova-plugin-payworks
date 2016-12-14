@@ -26,7 +26,7 @@ public class Payworks extends CordovaPlugin {
 	private String TAG = "Payworks";
 	private HashMap<String, PayworksPluginCmd> api;
 	private ActivityCallback activityCallback;
-	
+	private boolean initialized;
 		
 	abstract static class PayworksPluginCmd {
 		abstract boolean execute(final JSONArray args, final CallbackContext callbackContext) 
@@ -116,69 +116,79 @@ public class Payworks extends CordovaPlugin {
 					api.put("init", new PayworksPluginCmd() {
 						@Override
 						boolean execute(JSONArray args, CallbackContext callbackContext) throws Exception {
+							MposUi mposUi = initialized ? MposUi.getInitializedInstance() : null;
+							JSONObject options = args.getJSONObject(0);
 
-
-							ProviderMode mode = ProviderMode.TEST;
-							ApplicationName appName = ApplicationName.MCASHIER;
-							String integratorCode = "OERP";
-
-							JSONObject config = args.getJSONObject(0);
-							if ( config != null ) {
-								// mode
-								String modeStr = config.optString("mode");
-								if (modeStr != null) {
-									mode = ProviderMode.valueOf(modeStr);
+							if ( mposUi == null ) {
+								ProviderMode mode = ProviderMode.TEST;
+								ApplicationName appName = ApplicationName.MCASHIER;
+								String integratorCode = "OERP";
+	
+								if ( options != null ) {
+									// mode
+									String modeStr = options.optString("mode");
+									if (modeStr != null) {
+										mode = ProviderMode.valueOf(modeStr);
+									}
+	
+									// appname
+									String appStr = options.optString("appName");
+									if (appStr != null) {
+										appName = ApplicationName.valueOf(appStr);
+									}
+	
+									// integrator
+									integratorCode = options.optString("integrator",integratorCode);
 								}
-
-								// appname
-								String appStr = config.getString("appName");
-								if (appStr != null) {
-									appName = ApplicationName.valueOf(appStr);
-								}
-
-								// integrator
-								integratorCode = config.optString("integrator",integratorCode);
-							}
-
-							// init payworks
-							MposUi mposUi = MposUi.initialize(cordova.getActivity(), mode, appName, integratorCode);
-
+	
+								// init payworks								
+								mposUi = MposUi.initialize(cordova.getActivity(), mode, appName, integratorCode);
+								initialized = true;
+							} 
+							
 							// configure
-							if ( config != null ) {
+							if ( options != null ) {
 
 								// result
-								if (config.getBoolean("displayResult")) {
+								if (options.optBoolean("displayResult")) {
 									mposUi.getConfiguration().setDisplayResultBehavior(MposUiConfiguration.ResultDisplayBehavior.DISPLAY_INDEFINITELY);
 								} else {
 									mposUi.getConfiguration().setDisplayResultBehavior(MposUiConfiguration.ResultDisplayBehavior.CLOSE_AFTER_TIMEOUT);
 								}
 
 								// signature
-								if (config.getBoolean("signatureOnReceipt")) {
+								if (options.optBoolean("signatureOnReceipt")) {
 									mposUi.getConfiguration().setSignatureCapture(MposUiConfiguration.SignatureCapture.ON_RECEIPT);
 								} else {
 									mposUi.getConfiguration().setSignatureCapture(MposUiConfiguration.SignatureCapture.ON_SCREEN);
 								}
 
 								// summary options
-								JSONObject summary = config.getJSONObject("summary");
+								JSONObject summary = options.optJSONObject("summary");
 								if ( summary != null ) {
 									EnumSet<MposUiConfiguration.SummaryFeature> enumSet = EnumSet.noneOf(MposUiConfiguration.SummaryFeature.class);
-									if ( summary.getBoolean("captureTransaction") ) {
+									if ( summary.optBoolean("captureTransaction") ) {
 										enumSet.add(MposUiConfiguration.SummaryFeature.CAPTURE_TRANSACTION);
 									}
-									if ( summary.getBoolean("printReceipt")) {
+									if ( summary.optBoolean("printReceipt")) {
 										enumSet.add(MposUiConfiguration.SummaryFeature.PRINT_RECEIPT);
 									}
-									if ( summary.getBoolean("refundTransaction") ) {
+									if ( summary.optBoolean("refundTransaction") ) {
 										enumSet.add(MposUiConfiguration.SummaryFeature.REFUND_TRANSACTION);
 									}
-									if ( summary.getBoolean("email") ) {
+									if ( summary.optBoolean("email") ) {
 										enumSet.add(MposUiConfiguration.SummaryFeature.SEND_RECEIPT_VIA_EMAIL);
 									}
 								}
 
 							}
+							
+							if ( mposUi != null ) {
+								callbackContext.success();
+							} else {
+								callbackContext.error("Unable to create mposUi");
+							}
+							
 							return true;
 						}
 					});
